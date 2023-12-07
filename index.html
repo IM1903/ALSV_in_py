@@ -33,16 +33,13 @@
             text-overflow: ellipsis;
         }
 
-        > div {
+        div {
             height: auto;
         }
 
-        .bd-placeholder-img {
-            font-size: 1.125rem;
-            text-anchor: middle;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            user-select: none;
+        div a {
+            margin-left: .2em;
+            margin-right: .2em;
         }
 
         @media (min-width: 768px) {
@@ -118,8 +115,22 @@
     <link href="./css/bootstrap-icons.min.css" rel="stylesheet">
 </head>
 <body>
-<div class="dropdown">
-    <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle"
+
+<div class="modal modal-sheet bg-body-secondary p-4 py-md-3" tabindex="-1" role="dialog" id="compareModalSheet">
+    <div class="modal-content rounded-4 shadow">
+        <div class="modal-header border-bottom-0">
+            <h1 class="modal-title fs-5">对比</h1>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+                    onclick="compareModalDisplayAgent()"></button>
+        </div>
+        <div id="compareModalTable" class="modal-body py-0"></div>
+        <div class="modal-footer flex-column align-items-stretch w-100 gap-2 pb-3 border-top-0">
+        </div>
+    </div>
+</div>
+
+<div class="d-flex justify-content-center py-3">
+    <a href="#" class="btn btn-lg btn-secondary dropdown-toggle"
        data-bs-toggle="dropdown" aria-expanded="false">
         <strong>筛选🔎</strong>
     </a>
@@ -138,24 +149,33 @@
         </form>
         <a class="dropdown-item rounded-2" onclick="showHiddenTableColumn()">展示全部</a>
     </ul>
+    <a href="#" class="btn btn-lg btn-secondary" id="compareBtn"
+       onclick="compareModalDisplayAgent()"><strong>对比</strong></a>
 </div>
-<div id="container-multiTab" class="">
+<!-- Generated table here. -->
+<div id="container-multiTab" tabindex="1" class="">
 </div>
 
 <script src="./js/bootstrap.bundle.min.js"></script>
 <script>
-
-    //TODO 为取出的多行数据设计一个Modal, 便于实现跨表对比.
-
+// TODO 增加取消对比功能
     var colName = '';
     var columnSelect_Index = 0;
     var columnName_Array = [];
     var tabIndex = 1;
+    /* 存放所有表列名的数组
+     - 数据格式为 [tab编号,[该标签页所有列名]]*/
     let tab_Array = [];
+    /* 存放所有标签编号的数组
+    - 数据格式: ['tab-1','tab-2',...]*/
     let tabID_Array = [];
+    /* 存放所有被隐藏的列下标
+     - 数据格式为
+     - [tab编号,[该标签页所有被隐藏的列]]*/
     let hiddenColumn_Array = [];
-    let singleTableHiddenCols = []
-    let hiddenCols = []
+    // 当前表格中被隐藏的列的下标
+    let hiddenCols = [];
+
     /*
     * 从Python生成的html中取出数据并放入容器
     * */
@@ -173,8 +193,10 @@
 
     /* 表格初始化方法
     @modify tab_Array[] Tab名称 以及表格header ([标签页名],[表格列名])
-        - 遍历所有Tabs按钮确定有几张表,再遍历每个标签页内, 获取表格的列数.
-        - 数据存放于数组tab_Array */
+        - 遍历由Python生成的Tabs容器
+        - 确定表格数量,再遍历每个标签页
+        - 获取表格的列数.
+        - 数据存放于数组 tab_Array */
     function initTabs() {
         $('div #tabs ul li a').each(function () {
             console.log("个标签页被发现!");
@@ -192,23 +214,23 @@
                 index++;
             })
             $('div #' + tabID + ' >div div table tbody tr').each(function () {
-                $("<input type='checkbox' class='row-start' onchange='getRowData()'> ").prependTo($(this).find('td:first'));
+                $("<input type='checkbox' class='row-start' onclick='getRowData()'> ").prependTo($(this).find('td:first'));
             })
             //tab_Array 存放 tab-[index](标签页名称) 与 标签页内表格所有列名 的键值对, 被其他方法调用
             tab_Array['tab-' + tabIndex] = columnName_Array;
             console.log(columnName_Array);
-            hiddenColumn_Array['tab-' + tabIndex] = singleTableHiddenCols;
+            hiddenColumn_Array['tab-' + tabIndex] = [];
             columnName_Array = [];
             tabIndex++;
         })
-        $('img').click(function () {
-            console.log("放大图片")
-            if ($(this).attr('class') === 'zoomed') {
-                console.log("缩小图片")
-                $(this).removeClass('zoomed');
-            } else if ($(this).attr('class') !== 'zoomed') {
-                $(this).addClass('zoomed');
-            }
+        $.each(tabID_Array, function (index, value) {
+            var table = $('<table class="table table-striped table-sm" id=' + "compare_" + value + '>\n<thead>\n<tr>\n</tr>\n</thead>\n<tbody>\n</tbody>\n</table>');
+            $('div #compareModalTable').append(table);
+            var compareTableHeader = tab_Array[value]
+            $('#' + "compare_" + value + ' thead tr').append('<th>' + compareTableHeader.join('</th><th>') + '</th>');
+        })
+        $('td img').click(function () {
+            $(this).toggleClass('zoomed');
         })
     }
 
@@ -225,9 +247,9 @@
     }
 
     /*筛选操作中列选择器的触发方法
-    * - 由页面中输入框ID:colSelector 触发
+    * - 由 #colSelector 输入框触发
     * - 获取该输入框的数值后判定是否为空
-    * - 判断该数值是否比当前展示表格页的所有列数的数组长度更长
+    * - 判断该数值是否比当前展示表格列数更长
     * - 如果数据不合要求则设为缺省值 0 */
     function updateColSelect() {
         columnSelect_Index = $("#colSelector").val();
@@ -240,25 +262,49 @@
         }
     }
 
+    /*获取 #searchInput 输入框中的值作为关键字
+    - 遍历每一行数据
+    - 根据columnSelect_Index指定列数的内容与关键字比较
+    - 如果包含则显示该行，否则隐藏
+    * */
     function filter() {
-        //获取输入框中的值作为关键字
         var keyword = $("#searchInput").val();
-        //遍历每一行数据
         $("table tbody tr").each(function () {
-            //根据columnSelect_Index指定列数的内容与关键字比较，如果包含则显示该行，否则隐藏
             $(this).toggle($(this).children("td").eq(columnSelect_Index).text().indexOf(keyword) > -1);
         });
     }
 
     function getRowData() {
+        var count = $('.row-start:checked').length;
+        console.log(count);
         $('input.row-start').each(function () {
             if ($(this).is(':checked')) {
                 var row = $(this).closest('tr');
-                var rowInfo = '';
+                var nowTab = getActiveTable();
+                var rowInfo = [];
+                rowInfo.push('dummy')
                 row.find('td').each(function () {
-                    rowInfo += $(this).text() + ';';
+                    rowInfo.push($(this).text());
                 });
-                console.log(rowInfo);
+                // 遍历数组并为每个元素创建一个tbody的tr和td
+                $('#' + "compare_" + nowTab + ' tbody').append('<tr>' + rowInfo.join('</td><td>') + '</td></tr>');
+                $(this).replaceWith(' <span class="badge text-bg-success rounded-pill">已添加</span> ');
+                $(this).prop("checked", false)
+            }
+        });
+    }
+
+    function compareModalDisplayAgent() {
+        $('#compareModalSheet').toggleClass("d-block")
+        controlCompareTableVisibility()
+    }
+
+    function controlCompareTableVisibility() {
+        $('#compareModalTable table').each(function () {
+            if ($(this).find('tbody').children().length === 0) {
+                $(this).hide();
+            } else {
+                $(this).show();
             }
         });
     }
@@ -283,7 +329,6 @@
         console.log(hiddenColumn_Array);
         tableDisplayAgent("hide");
     }
-
 
     function showHiddenTableColumn() {
         tableDisplayAgent("reset");
@@ -324,10 +369,6 @@
     //获得数据后初始化页面中表格管理相关功能
     window.onload = getActiveTable;
     window.onload = initTabs;
-    $(document).ready(filter)
-    $(document).ready(updateColSelect)
-    $(document).ready(getActiveTable)
-    $(document).ready(initTabs)
 </script>
 </body>
 </html>

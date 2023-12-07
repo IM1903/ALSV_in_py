@@ -73,7 +73,7 @@ def sheet_renderer(file_path):
 
 def main():
     parser = argparse.ArgumentParser(description='接收工作表并处理,最后生成可视化页面便于分析对比.')
-    parser.add_argument('-p', type=str, help='工作表的路径')
+    parser.add_argument('-p', type=str, help='简短化的PATH参数')
     parser.add_argument('-path', type=str, help='工作表的路径')
     try:
         args = parser.parse_args()
