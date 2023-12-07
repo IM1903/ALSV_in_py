@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="utf-8">
+
+    <script src="./js/jquery.min.js"></script>
+
+    <link rel="stylesheet" href="./css/jquery-ui.css">
+    <script src="./js/jquery-ui.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Table</title>
+
+    <link rel="stylesheet" href="./css/css@3.css">
+    <link href="./css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        img {
+            width: 240px;
+            height: auto;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .zoomed {
+            position: fixed;
+            width: 65%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.5s ease-in-out;
+        }
+
+        td {
+            text-overflow: ellipsis;
+        }
+
+        > div {
+            height: auto;
+        }
+
+        .bd-placeholder-img {
+            font-size: 1.125rem;
+            text-anchor: middle;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            user-select: none;
+        }
+
+        @media (min-width: 768px) {
+            .bd-placeholder-img-lg {
+                font-size: 3.5rem;
+            }
+        }
+
+        .b-example-divider {
+            width: 100%;
+            height: 3rem;
+            background-color: rgba(0, 0, 0, .1);
+            border: solid rgba(0, 0, 0, .15);
+            border-width: 1px 0;
+            box-shadow: inset 0 .5em 1.5em rgba(0, 0, 0, .1), inset 0 .125em .5em rgba(0, 0, 0, .15);
+        }
+
+        .b-example-vr {
+            flex-shrink: 0;
+            width: 1.5rem;
+            height: 100vh;
+        }
+
+        .bi {
+            vertical-align: -.125em;
+            fill: currentColor;
+        }
+
+        .nav-scroller {
+            position: relative;
+            z-index: 2;
+            height: 2.75rem;
+            overflow-y: hidden;
+        }
+
+        .nav-scroller .nav {
+            display: flex;
+            flex-wrap: nowrap;
+            padding-bottom: 1rem;
+            margin-top: -1px;
+            overflow-x: auto;
+            text-align: center;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .btn-bd-primary {
+            --bd-violet-bg: #712cf9;
+            --bd-violet-rgb: 112.520718, 44.062154, 249.437846;
+
+            --bs-btn-font-weight: 600;
+            --bs-btn-color: var(--bs-white);
+            --bs-btn-bg: var(--bd-violet-bg);
+            --bs-btn-border-color: var(--bd-violet-bg);
+            --bs-btn-hover-color: var(--bs-white);
+            --bs-btn-hover-bg: #6528e0;
+            --bs-btn-hover-border-color: #6528e0;
+            --bs-btn-focus-shadow-rgb: var(--bd-violet-rgb);
+            --bs-btn-active-color: var(--bs-btn-hover-color);
+            --bs-btn-active-bg: #5a23c8;
+            --bs-btn-active-border-color: #5a23c8;
+        }
+
+        .bd-mode-toggle {
+            z-index: 1500;
+        }
+
+        .bd-mode-toggle .dropdown-menu .active .bi {
+            display: block !important;
+        }
+    </style>
+    <!-- Custom styles for this template -->
+    <link href="./css/bootstrap-icons.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="dropdown">
+    <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle"
+       data-bs-toggle="dropdown" aria-expanded="false">
+        <strong>筛选🔎</strong>
+    </a>
+    <ul class="dropdown-menu tborder-0 pt-0 mx-0 rounded-3 shadow overflow-hidden">
+        <form class="p-2 mb-2 bg-body-tertiary border-bottom">
+            <label for="colSelector">列数</label>
+            <li><input id="colSelector" type="search" class="form-control" autocomplete="false"
+                       placeholder="筛选列..."
+                       spellcheck="false" data-ms-editor="true" oninput="updateColSelect()"></li>
+            <label for="searchInput">关键字</label>
+            <li>
+                <input id="searchInput" type="search" class="form-control" autocomplete="false"
+                       placeholder="输入关键词..." spellcheck="false" data-ms-editor="true"
+                       oninput="filter()">
+            </li>
+        </form>
+        <a class="dropdown-item rounded-2" onclick="showHiddenTableColumn()">展示全部</a>
+    </ul>
+</div>
+<div id="container-multiTab" class="">
+</div>
+
+<script src="./js/bootstrap.bundle.min.js"></script>
+<script>
+
+    //TODO 为取出的多行数据设计一个Modal, 便于实现跨表对比.
+
+    var colName = '';
+    var columnSelect_Index = 0;
+    var columnName_Array = [];
+    var tabIndex = 1;
+    let tab_Array = [];
+    let tabID_Array = [];
+    let hiddenColumn_Array = [];
+    let singleTableHiddenCols = []
+    let hiddenCols = []
+    /*
+    * 从Python生成的html中取出数据并放入容器
+    * */
+    $.get("./doc.html", function (data) {
+        // 获取指定 ID 容器的内容
+        var content = $("#tabs").html();
+        // 将内容替换到另一个文档的特定 ID 元素中
+        $(data).find("#tabs").html(content);
+        // 将加载的文档内容替换到当前文档的指定 ID 容器中
+        $('#container-multiTab').html(data);
+
+        $("#tabs").tabs();
+    });
+
+
+    /* 表格初始化方法
+    @modify tab_Array[] Tab名称 以及表格header ([标签页名],[表格列名])
+        - 遍历所有Tabs按钮确定有几张表,再遍历每个标签页内, 获取表格的列数.
+        - 数据存放于数组tab_Array */
+    function initTabs() {
+        $('div #tabs ul li a').each(function () {
+            console.log("个标签页被发现!");
+        })
+        $('[id^="tab-"]').each(function () {
+            var tabID = $(this).attr("id")
+            tabID_Array.push(tabID);
+            console.log("正在处理: " + tabID);
+            var index = 0;
+            $('div #' + tabID + ' >div div table thead tr th').each(function () {
+                colName = $(this).text();
+                columnName_Array.push(colName);
+                //TODO "<span className='badge bg-danger-subtle border border-danger-subtle text-danger-emphasis rounded-pill'  value=" + index + " onClick='hideTableColumn()'>隐藏</span>"
+                $("<input type='checkbox' value=" + index + " class='.pr-3' onchange='hideTableColumn()'>").prependTo($(this));
+                index++;
+            })
+            $('div #' + tabID + ' >div div table tbody tr').each(function () {
+                $("<input type='checkbox' class='row-start' onchange='getRowData()'> ").prependTo($(this).find('td:first'));
+            })
+            //tab_Array 存放 tab-[index](标签页名称) 与 标签页内表格所有列名 的键值对, 被其他方法调用
+            tab_Array['tab-' + tabIndex] = columnName_Array;
+            console.log(columnName_Array);
+            hiddenColumn_Array['tab-' + tabIndex] = singleTableHiddenCols;
+            columnName_Array = [];
+            tabIndex++;
+        })
+        $('img').click(function () {
+            console.log("放大图片")
+            if ($(this).attr('class') === 'zoomed') {
+                console.log("缩小图片")
+                $(this).removeClass('zoomed');
+            } else if ($(this).attr('class') !== 'zoomed') {
+                $(this).addClass('zoomed');
+            }
+        })
+    }
+
+    /* 获得当前展示页面方法
+    @Param returnNumber
+    - 1: 返回当前标签页数字编号
+    - 其他/空: 返回标签页名  */
+    function getActiveTable(returnNumber) {
+        var activeTable = $("div #tabs").tabs("option", "active");
+        if (returnNumber === 1) {
+            return (activeTable + 1);
+        }
+        return "tab-" + (activeTable + 1);
+    }
+
+    /*筛选操作中列选择器的触发方法
+    * - 由页面中输入框ID:colSelector 触发
+    * - 获取该输入框的数值后判定是否为空
+    * - 判断该数值是否比当前展示表格页的所有列数的数组长度更长
+    * - 如果数据不合要求则设为缺省值 0 */
+    function updateColSelect() {
+        columnSelect_Index = $("#colSelector").val();
+        if (columnSelect_Index != null && columnSelect_Index <= tab_Array[getActiveTable()].length) {
+            columnSelect_Index = columnSelect_Index - 1;
+        } else {
+            console.log(columnSelect_Index);
+            console.error("选择的列数超出表格内容! 已重设为 0");
+            columnSelect_Index = 0;
+        }
+    }
+
+    function filter() {
+        //获取输入框中的值作为关键字
+        var keyword = $("#searchInput").val();
+        //遍历每一行数据
+        $("table tbody tr").each(function () {
+            //根据columnSelect_Index指定列数的内容与关键字比较，如果包含则显示该行，否则隐藏
+            $(this).toggle($(this).children("td").eq(columnSelect_Index).text().indexOf(keyword) > -1);
+        });
+    }
+
+    function getRowData() {
+        $('input.row-start').each(function () {
+            if ($(this).is(':checked')) {
+                var row = $(this).closest('tr');
+                var rowInfo = '';
+                row.find('td').each(function () {
+                    rowInfo += $(this).text() + ';';
+                });
+                console.log(rowInfo);
+            }
+        });
+    }
+
+    function tabSwitch() {
+        hiddenCols = [];
+    }
+
+    //隐藏特定表格列, 通过获取表格列checkbox状态确定被隐藏表格下标.
+    //推入hiddenCol数组,再遍历表格中此下标的元素并隐藏
+    function hideTableColumn() {
+        $('div #' + getActiveTable() + ' >div div table thead tr th input[type="checkbox"]').each(function () {
+            if ($(this).is(":checked")) {
+                console.log($(this).val());
+                hiddenCols.push($(this).val())
+            }
+            $(this).prop("checked", false)
+        })
+        var nowTable = getActiveTable();
+        hiddenColumn_Array[nowTable] = hiddenCols;
+        console.log(getActiveTable());
+        console.log(hiddenColumn_Array);
+        tableDisplayAgent("hide");
+    }
+
+
+    function showHiddenTableColumn() {
+        tableDisplayAgent("reset");
+    }
+
+    /*控制表格列的显示方法.
+    @params: operationType: 字符串变量,操作类型.
+     - hide :隐藏指定表中的列
+     - reset:显示特定表中的列
+    */
+    function tableDisplayAgent(operationType) {
+        if (operationType === "hide") {
+            $.each(hiddenColumn_Array[getActiveTable()], function (i, val) {
+                $('div #' + getActiveTable() + ' >div div #dataTable-' + getActiveTable(1) + ' thead tr').each(function () {
+                    $(this).find('th:eq(' + val + ')').fadeOut();
+                });
+                $('div #' + getActiveTable() + ' >div div #dataTable-' + getActiveTable(1) + ' tbody tr').each(function () {
+                    $(this).find('td:eq(' + val + ')').fadeOut();
+                });
+            })
+        }
+        if (operationType === "reset") {
+            $.each(hiddenColumn_Array[getActiveTable()], function (i, val) {
+                $('div #' + getActiveTable() + ' >div div #dataTable-' + getActiveTable(1) + ' thead tr').each(function () {
+                    $(this).find('th:eq(' + val + ')').fadeIn();
+                });
+                $('div #' + getActiveTable() + ' >div div #dataTable-' + getActiveTable(1) + ' tbody tr').each(function () {
+                    $(this).find('td:eq(' + val + ')').fadeIn();
+                });
+                hiddenColumn_Array[getActiveTable()].pop(val);
+            })
+        }
+    }
+
+    //初始化时调用一次筛选函数，确保页面加载完成后默认展示所有数据
+    window.onload = filter;
+    window.onload = updateColSelect;
+    //获得数据后初始化页面中表格管理相关功能
+    window.onload = getActiveTable;
+    window.onload = initTabs;
+    $(document).ready(filter)
+    $(document).ready(updateColSelect)
+    $(document).ready(getActiveTable)
+    $(document).ready(initTabs)
+</script>
+</body>
+</html>
